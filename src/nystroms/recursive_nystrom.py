@@ -93,9 +93,9 @@ if __name__ == "__main__":
     rbf = RBF()
     linear = Linear()
 
-    # nystrom_output = ny.recursiveNystorm(A,100,rbf)
-    # kernel_output = rbf(A, A)
-    #
-    # ker_diff = np.abs(nystrom_output - kernel_output)
-    # print(ker_diff)
-    # print(sum(ker_diff))
+    nystrom_output = ny.recursiveNystorm(A,100,rbf)
+    kernel_output = rbf(A, A)
+
+    ker_diff = np.abs(nystrom_output - kernel_output)
+    print(ker_diff)
+    print(sum(ker_diff))
