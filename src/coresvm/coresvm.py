@@ -93,7 +93,7 @@ class CoreSVM():
     #Step 4.3 Adding the furthest point
     def adding_furthest_point(self):
         return
-    
+
 if  __name__ == "__main__":
     DATA_PATH = os.path.join(os.getcwd(),"../../data")
     X = np.array(pd.read_csv(os.path.join(DATA_PATH,"toyX.csv")))

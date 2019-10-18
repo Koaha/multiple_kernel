@@ -10,13 +10,15 @@ import sys
 import numpy as np
 import pandas as pd
 import pickle
-from kernels.RBF import RBF
-from utilities.gram import gram
-from utilities import *
+
 from copy import copy
 from tqdm import tqdm
 from sklearn.base import BaseEstimator, ClassifierMixin
 import time
+sys.path.append("..")
+from kernels.RBF import RBF, Linear
+from utilities.gram import gram
+from utilities import *
 
 class LaskovOnlineSVR(BaseEstimator,ClassifierMixin):
     """
