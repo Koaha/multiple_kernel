@@ -71,12 +71,13 @@ class nystorm():
         return center
 
 if __name__ == "__main__":
-    A = np.random.rand(15000,10)*10
+    A = np.random.rand(15000,10)
+    B = np.random.rand(15000,10)
     ny = nystorm()
     rbf = RBF()
     linear = Linear()
 
-    samples_size_set = np.arange(100,1000,40)
+    samples_size_set = np.arange(100,1000,300)
     run_time_nyS = []
     run_time_kerS = []
     acc_list = []

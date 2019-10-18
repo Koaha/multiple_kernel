@@ -5,8 +5,9 @@ from math import sqrt
 from random import uniform, shuffle,seed, choice, randint
 import sys,os
 import pandas as pd
-sys.path.append("../../")
-sys.path.append("../")
+# sys.path.append("../../")
+sys.path.append("..")
+# sys.path.append(".")
 from kernels.kernels import RBF,Linear,Polynomial
 
 class CoreSVM():
@@ -102,5 +103,3 @@ if  __name__ == "__main__":
 
     kernel = RBF(gamma=50)
     cvm = CoreSVM(X,Y,iter=2000,kernel=kernel)
-
-
