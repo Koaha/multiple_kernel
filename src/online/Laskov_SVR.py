@@ -91,6 +91,16 @@ class LaskovOnlineSVR(BaseEstimator,ClassifierMixin):
 
     def bookingProcedure(self):
 
+        # Check the moving case of new sample C
+        # Case 1: Moving by the margin change from remaining set to support set
+
+        # Case 2: Moving by theta from error set to support set
+
+        #===========================================
+        #== Checking the moving of existing sample==
+        #===========================================
+        # Case 3:
+
         return
 
     def fit(self,X,Y):
@@ -171,7 +181,11 @@ class LaskovOnlineSVR(BaseEstimator,ClassifierMixin):
 
         return beta, gamma
 
+    def computeLc1(selfs):
+        return
 
+    def computeLc2(self):
+        return
 
 def main(argv):
     # Test of Online SVR algorithm
