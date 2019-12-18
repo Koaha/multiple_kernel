@@ -39,16 +39,16 @@ class LaskovOnlineSVR(BaseEstimator,ClassifierMixin):
         print('SELF', self.C, self.eps, self.kernelParam)
         # Algorithm initialization
         self.numSamplesTrained = 0
-        self.theta = np.array([])
+        self.weights = np.array([])
 
         # Samples X (features) and Y (truths)
-        self.X = np.array([])
-        self.Y = np.array([])
+        self.X = list()
+        self.Y = list()
         # Working sets, contains indices pertaining to X and Y
-        self.supportSetIndices = np.array([])
-        self.errorSetIndices = np.array([])
-        self.remainderSetIndices = np.array([])
-        self.R = np.array([[]])
+        self.supportSetIndices = list()
+        self.errorSetIndices = list()
+        self.remainderSetIndices = list()
+        self.R = np.matrix([])
 
         if kernel == None:
             self.kernel = RBF()
@@ -58,18 +58,18 @@ class LaskovOnlineSVR(BaseEstimator,ClassifierMixin):
     def learn(self, newSampleX, newSampleY):
         #Line 1 Add X,Y to the training set
         self.numSamplesTrained +=1 #increase the sample size
-        self.X = np.vstack((self.X, newSampleX))
-        self.Y = np.vstack((self.Y, newSampleY))
-        self.weights = np.vstack((self.weights, 0))
+        self.X.append(newSampleX)# add new instance to the data flow
+        self.Y.append(newSampleY)
+        self.weights = np.append(self.weights, 0)
         i = self.numSamplesTrained - 1
         # The new set with additional new Sample input
-        H = self.computeMargin(newSampleX,newSampleY)
+        H = self.computeMargin(self.X,self.Y)
         #H(xc) is the Margin at index xc = i (latest sample)
         if (abs(H[i]) <= self.eps):
             # Line 3 add new sample to the remaining set and exit
             if self.verbose == 1:
                 print('Adding new sample {0} to remainder set, within eps.'.format(i))
-            self.remainderSetIndices = np.hstack((self.remainderSetIndices,i))
+            self.remainderSetIndices.append(i)
             return
 
         addNewSample = False
@@ -131,17 +131,17 @@ class LaskovOnlineSVR(BaseEstimator,ClassifierMixin):
 
     def prune_vector(self,kn=7):
         # TODO this part does 2 tasks
-        # if self.prune:
-        #     i = self.numSamplesTrained - 1
-        #     H = self.computeMargin(self.X, self.Y)
-        #     beta, gamma = self.computeBetaGamma(i)
-        #     get_reduce_list = getNMinSupport(self, H, beta, gamma, i, kn=kn)
-        #     delta = self.move_less(get_reduce_list)
-        #     if len(get_reduce_list) > 0:
-        #         self.balance_equilibrium(delta, get_reduce_list)
-        # if self.verbose == 1:
-        #     print(len(self.remainderSetIndices), 'self.remainderSetIndices =', self.remainderSetIndices)
-        #     print(len(self.errorSetIndices), 'self.errorSetIndices =', self.errorSetIndices)
+        if self.prune:
+            i = self.numSamplesTrained - 1
+            H = self.computeMargin(self.X, self.Y)
+            beta, gamma = self.computeBetaGamma(i)
+            get_reduce_list = getNMinSupport(self, H, beta, gamma, i, kn=kn)
+            delta = self.move_less(get_reduce_list)
+            if len(get_reduce_list) > 0:
+                self.balance_equilibrium(delta, get_reduce_list)
+        if self.verbose == 1:
+            print(len(self.remainderSetIndices), 'self.remainderSetIndices =', self.remainderSetIndices)
+            print(len(self.errorSetIndices), 'self.errorSetIndices =', self.errorSetIndices)
         return
 
     def get_less_significant_list(self,kn=4):
@@ -393,19 +393,45 @@ class LaskovOnlineSVR(BaseEstimator,ClassifierMixin):
 
     # Compute the prediction or F(x) of the set
     # of up-to-date samples set ; sampleX size: n x features
-    def predict(self, newSampleX):
-        set_ES_indices = np.hstack((self.supportSetIndices,self.errorSetIndices))
-        if (set_ES_indices.size != 0):
-            set_ES = self.X[set_ES_indices]
-            K = self.computeKernelOutput(set_ES,newSampleX)
-            return K.T.dot(self.theta.reshape(-1, 1)) + self.bias
-        return np.zeros_like(newSampleX) + self.bias
+    def predict_(self, newSampleX):
+        if (self.numSamplesTrained>0):
+            K = self.computeKernelOutput(np.matrix(self.X).copy(),np.matrix(newSampleX).copy())
+            return K.T.dot(self.weights.reshape(-1, 1)) + self.bias
+        else:
+            return np.zeros_like(newSampleX) + self.bias
+
+    def pred(self, newSampleX):
+        X = np.array(self.X)
+        newX = np.array(newSampleX)
+        weights = np.array(self.weights)
+        weights.shape = (weights.size, 1)
+        # if self.numSamplesTrained > 0:
+        #     y = self.computeKernelOutput(X, newX)
+        #     return np.sign((weights.T @ y).T + self.bias - 0.5)
+        # else:
+        #     return np.sign(np.zeros_like(newX) + self.bias - 0.5)
+        if self.numSamplesTrained > 0:
+            y = self.computeKernelOutput(X, newX)
+            return np.sign((weights.T @ y).T + self.bias)
+        else:
+            return np.sign(np.zeros_like(newX) + self.bias)
+
+    def predict(self, X):
+        res = []
+        for singleX in X:
+            pred_value = self.pred([singleX])[0,0]
+            res.append(pred_value)
+        res = np.array(res)
+        res[res > 0] = 1
+        res[res <= 0] = 0
+        return res.astype(int)
 
     # Line 3 compute the margin H(x) by taking
     # the differences with the prediction F(x)
     def computeMargin(self, newSampleX, newSampleY):
-        return self.predict(newSampleX) -newSampleY # input is the set X + new instance X
-
+        fx = self.predict_(newSampleX)  # input is the set X + new instance X
+        newSampleY = np.array(newSampleY)
+        return fx - newSampleY
 
 
 
