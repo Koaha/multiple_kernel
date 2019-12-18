@@ -79,40 +79,18 @@ class LaskovOnlineSVR(BaseEstimator,ClassifierMixin):
         q = np.sign(h_xc)
 
         while KKT_violation:
-            beta,gamma = self.computeBetaGamma()
-
-        # Step 6 assign new sample to either 1 of the 3 groups
-        # Support, Error, Remaining
-        while not addNewSample:
-            # print(len(self.supportSetIndices),'self.supportSetIndices =', self.supportSetIndices)
-            # print(len(self.remainderSetIndices),'self.remainderSetIndices =', self.remainderSetIndices)
-            # print(len(self.errorSetIndices),'self.errorSetIndices =', self.errorSetIndices)
-            # Ensure we're not looping infinitely
+            beta,gamma = self.computeBetaGamma(i)
             iterations += 1
-            if iterations > self.numSamplesTrained * 100:
-                print('Warning: we appear to be in an infinite loop.')
-                sys.exit()
-                iterations = 0
             # Line6.1 Update beta gamma at the new sample i
             # Using equation 10 & 12
             beta,gamma = self.computeBetaGamma(i)
             #Line6.2 Find least variations
 
-            deltaC, flag, minIndex = getMinVariation(self,H, beta, gamma, i)
-            # Update weights and bias based on variation
-            if len(self.supportSetIndices) > 0 and len(beta) > 0:
-                self.weights[i] += deltaC
-                delta = beta * deltaC
-                self.bias += delta.item(0)
-                weightDelta = np.array(delta[1:])
-                weightDelta.shape = (len(weightDelta),)
-                self.weights[self.supportSetIndices] += weightDelta
-                H += gamma * deltaC
-            else:
-                self.bias += deltaC
-                H += deltaC
-            # Adjust sets, moving samples between them according to flag
-            H, addNewSample = self.adjustSets(H, beta, gamma, i, flag, minIndex)
+            KKT_violation = self.bookeepingProcedure()
+        return
+
+    def bookingProcedure(self):
+
         return
 
     def fit(self,X,Y):
@@ -175,8 +153,23 @@ class LaskovOnlineSVR(BaseEstimator,ClassifierMixin):
             beta =  np.array([])
         else:
             beta = -self.R @ np.vstack((1,Qsi))
-        if ()
-        return
+
+        non_support_set_indices = np.hstack((self.remainderSetIndices,self.errorSetIndices))
+        non_support_set = self.X[non_support_set_indices]
+
+        Qnc = self.computeQ(non_support_set, c)  # compute kernel of all samples vs new samples
+        Qns = self.computeQ(non_support_set, support_set)  # compute kernel of all samples vs support set
+
+        if non_support_set.size == 0:
+            gamma = np.array(np.ones_like(Qnc))
+        else:
+            gamma = Qnc + np.hstack((np.ones(Qnc.shape),Qns)) @ beta
+
+        # Correct for NaN
+        beta[np.isnan(beta)] = 0
+        gamma[np.isnan(gamma)] = 0
+
+        return beta, gamma
 
 
 
