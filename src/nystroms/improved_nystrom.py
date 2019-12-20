@@ -48,6 +48,23 @@ class nystorm():
         G = E.T @ Ve[:, pidx[0]] @ inVa
         return G @ G.T
 
+    """
+    This is the implementation of normal Nystrom method
+    """
+    def nystorm(self,data, kernel,m,s):
+        """
+
+        :param data:
+        :param kernel:
+        :param m:
+        :param s:
+        :return:
+        """
+        data_size, data_dimension = data.shape
+        selected_index = np.random.permutation(m)
+        selected_vectors = data[selected_index]
+
+
     def eff_kmeans(self, data, m, max_iter):
         n,dim = data.shape
         dex = np.random.permutation(n)
