@@ -23,7 +23,12 @@ class RBF():
             self.gamma = 1.0 / (2.0 * sigma ** 2)
         else:
             self.gamma = gamma
-    def __call__(self,x,y):
+    def __call__(self,x,y,gamma=None):
+        if gamma is None:
+            sigma = 2
+            self.gamma = 1.0 / (2.0 * sigma ** 2)
+        else:
+            self.gamma = gamma
         if sp.isspmatrix(x) and sp.isspmatrix(y):
             x = np.array(x.todense())
             y = np.array(y.todense())
