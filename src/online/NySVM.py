@@ -192,7 +192,6 @@ class NySVM(BaseEstimator,ClassifierMixin):
         return H
 
     def bookKeepingProcedure(self,h_xc,gamma,q,beta):
-
         # Check the moving case of new sample C
         # Case 1: Moving by the margin change from remaining set to support set
         Lc1 = self.computeLc1(h_xc,gamma,q)
