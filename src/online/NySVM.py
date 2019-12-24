@@ -53,7 +53,7 @@ class NySVM(BaseEstimator,ClassifierMixin):
     def __init__(self,numFeatures, C=1, eps=1e-3, kernel =None, kernelParam=None, bias=0, prune=False,debug=False,verbose=0):
         # Configurable Parameters
         self.prune = prune
-        # self.numFeatures = numFeatures
+        self.numFeatures = numFeatures
         self.C = C
         self.eps = eps
         self.kernelParam = kernelParam
@@ -66,8 +66,10 @@ class NySVM(BaseEstimator,ClassifierMixin):
         self.theta = np.array([])
 
         # Samples X (features) and Y (truths)
-        self.X = np.array([])
-        self.Y = np.array([])
+        # self.X = np.array([[]])
+        # self.Y = np.array([[]])
+        self.X = np.empty((0,numFeatures))
+        self.Y = np.empty((0, 1))
         # Working sets, contains indices pertaining to X and Y
         self.supportSetIndices = np.array([])
         self.errorSetIndices = np.array([])
@@ -84,7 +86,7 @@ class NySVM(BaseEstimator,ClassifierMixin):
         self.numSamplesTrained += 1  # increase the sample size
         self.X = np.vstack((self.X, newSampleX))
         self.Y = np.vstack((self.Y, newSampleY))
-        self.weights = np.vstack((self.weights, 0))
+        self.theta = np.hstack((self.theta, 0))
         i = self.numSamplesTrained - 1
         # The new set with additional new Sample input
         H = self.computeMargin(self.X,self.Y)
@@ -114,7 +116,7 @@ class NySVM(BaseEstimator,ClassifierMixin):
             self.bias, self.theta = self.update_theta_bias(beta,delta_theta_c)
             H = self. update_margin_h(H,gamma,delta_theta_c)
 
-            H, KKT_violation = self.adjustSetByFlag(flag,moving_vector_index,H,beta,gamma)
+            H, KKT_violation = self.adjustSetByFlag(flag,int(moving_vector_index),H,beta,gamma)
         return
 
     def adjustSetByFlag(self,flag,i,H,beta,gamma):
@@ -125,14 +127,14 @@ class NySVM(BaseEstimator,ClassifierMixin):
             H[i] = self.sign_number(H[i]) * self.eps
             self.supportSetIndices = np.hstack((self.supportSetIndices,i))
             self.R = self.addSampleToR(i, self.SUPPORT_SET_FLAG, beta, gamma)
-            return H, True
+            return H, False
         # add new sample to Error set
         elif flag == 1:
             if self.verbose == 1:
                 print('Adding new sample {0} to error set.'.format(i))
             self.theta[i] = self.sign_number(self.weights[i]) * self.C
             self.errorSetIndices = np.hstack((self.errorSetIndices, i))
-            return H, True
+            return H, False
         #remove sample from support set
         elif flag == 2:
             self.theta[i] = self.moveToCloserBound(self.theta[i])
@@ -145,8 +147,31 @@ class NySVM(BaseEstimator,ClassifierMixin):
             self.supportSetIndices = np.delete(self.supportSetIndices, remove_index)
         # move sample from Error set to Support set
         elif flag == 3:
+            index = np.argwhere(self.errorSetIndices == i)
+            H[i] = self.sign_number(H[i]) * self.eps
+            self.supportSetIndices = np.hstack((self.supportSetIndices,i))
+            self.errorSetIndices = np.delete(self.errorSetIndices, index)
+            self.R = self.addSampleToR(index, self.ERROR_SET_FLAG, beta, gamma)
+        elif flag == 4:
+            index = np.argwhere(self.remainderSetIndices == i)
+            H[i] = self.sign_number(H[i]) * self.eps
+            self.supportSetIndices = np.hstack((self.supportSetIndices, i))
+            self.remainderSetIndices = np.delete(self.remainderSetIndices, index)
+            self.R = self.addSampleToR(index, self.REMAINDER_SET_FLAG, beta, gamma)
+        return H, True
 
     def removeSampleFromR(self,i):
+        k_remove_index = np.argwhere(self.supportSetIndices == i)
+        I = np.array(list(range(len(self.R))))
+        I = np.delete(I,k_remove_index)
+        I.shape = (1,I.size)
+        # Adjust R
+        if self.R[k_remove_index, k_remove_index] != 0:
+            Rnew = self.R[I.T, I] - (self.R[I.T, k_remove_index] * self.R[k_remove_index, I]) / self.R[
+                k_remove_index, k_remove_index].item()
+        else:
+            Rnew = np.copy(self.R[I.T, I])
+        return Rnew
 
     def moveToCloserBound(self,value):
         res = 0
@@ -163,24 +188,36 @@ class NySVM(BaseEstimator,ClassifierMixin):
         :param gamma:
         :return:
         """
-        X = np.array(self.X)
-        sampleX = X[sample_index, :]
+        sampleX = self.X[sample_index]
         sampleX.shape = ((int)(sampleX.size / self.numFeatures), self.numFeatures)
         # Add first element
         if self.R.shape[0] <= 1:
             Rnew = np.ones([2, 2])
             Rnew[0, 0] = -self.computeKernelOutput(sampleX, sampleX)
             Rnew[1, 1] = 0
-        if set_flag == self.SUPPORT_SET_FLAG:
-            # add a column and row of zeros onto right/bottom of R
-            r, c = self.R.shape
-            R_extend_column = np.append(self.R, np.zeros([r, 1]), axis=1)
-            R_extend_column_row = np.append(R_extend_column, np.zeros([1, c + 1]), axis=0)
-            beta_extend = np.hstack((beta,1))
-            Rnew = R_extend_column_row + 1/gamma[sample_index]* beta_extend @ beta_extend
             return Rnew
+        # recompute beta/gamma if from error/remaining set
+        if set_flag != self.SUPPORT_SET_FLAG:
+            # beta, gamma = self.computeBetaGamma(sampleIndex)
+            Qii = self.computeKernelOutput(sampleX, sampleX)
+            Qsi = self.computeKernelOutput(self.X[self.supportSetIndices[0:-1], :], sampleX)
+            beta = -self.R @ np.append(np.matrix([1]), Qsi, axis=0)
+            beta[np.isnan(beta)] = 0
+            beta.shape = (len(beta), 1)
+            gamma[sample_index] = Qii + np.append(1, Qsi.T) @ beta
+            gamma[np.isnan(gamma)] = 0
+            gamma.shape = (len(gamma), 1)
+        # add a column and row of zeros onto right/bottom of R
+        r, c = self.R.shape
+        R_extend_column = np.append(self.R, np.zeros([r, 1]), axis=1)
+        R_extend_column_row = np.append(R_extend_column, np.zeros([1, c + 1]), axis=0)
+        beta_extend = np.hstack((beta,1))
+        Rnew = R_extend_column_row + 1/gamma[sample_index]* beta_extend @ beta_extend
+        return Rnew
 
     def update_theta_bias(self, beta, delta_theta_c):
+        if len(self.supportSetIndices) == 0 or len(beta) == 0:
+            return self.bias + delta_theta_c, self.theta
         delta_beta_theta_vector = beta*delta_theta_c
         updated_bias = self.bias + delta_beta_theta_vector[0]
         updated_theta = self.theta + delta_beta_theta_vector[1:]
@@ -188,6 +225,8 @@ class NySVM(BaseEstimator,ClassifierMixin):
 
     def update_margin_h(self, H,gamma, delta_theta_c):
         set_N_indices = np.concatenate((self. errorSetIndices,self.remainderSetIndices))
+        if len(set_N_indices) == 0:
+            return H + delta_theta_c
         H[set_N_indices] = H[set_N_indices] + gamma*delta_theta_c
         return H
 
@@ -254,7 +293,7 @@ class NySVM(BaseEstimator,ClassifierMixin):
             set_ES = self.X[set_ES_indices]
             K = self.computeKernelOutput(set_ES, newSampleX)
             return K.T.dot(self.theta.reshape(-1, 1)) + self.bias
-        return np.zeros_like(newSampleX) + self.bias
+        return np.zeros((len(newSampleX),1))+ self.bias
 
     # Line 3 compute the margin H(x) by taking
     # the differences with the prediction F(x)
@@ -267,23 +306,23 @@ class NySVM(BaseEstimator,ClassifierMixin):
         return np.array([[]])
 
     def computeBetaGamma(self, i):
-        support_set = self.X[self.supportSetIndices]
-        c = self.X[i]
-        Qsi = self.computeQ(support_set, c)
         if self.supportSetIndices.size == 0:
             beta = np.array([])
         else:
+            support_set = self.X[self.supportSetIndices]
+            c = self.X[i]
+            Qsi = self.computeQ(support_set, c)
             beta = -self.R @ np.vstack((1, Qsi))
 
         non_support_set_indices = np.hstack((self.remainderSetIndices, self.errorSetIndices))
-        non_support_set = self.X[non_support_set_indices]
 
-        Qnc = self.computeQ(non_support_set, c)  # compute kernel of all samples vs new samples
-        Qns = self.computeQ(non_support_set, support_set)  # compute kernel of all samples vs support set
-
-        if non_support_set.size == 0:
-            gamma = np.array(np.ones_like(Qnc))
+        if non_support_set_indices.size == 0:
+            gamma = np.ones(shape=(self.Y.shape))
         else:
+            non_support_set = self.X[non_support_set_indices]
+
+            Qnc = self.computeQ(non_support_set, c)  # compute kernel of all samples vs new samples
+            Qns = self.computeQ(non_support_set, support_set)  # compute kernel of all samples vs support set
             gamma = Qnc + np.hstack((np.ones(Qnc.shape), Qns)) @ beta
 
         # Correct for NaN
@@ -305,14 +344,19 @@ class NySVM(BaseEstimator,ClassifierMixin):
         :param beta:
         :return:
         """
-        support_theta = self.theta[self.supportSetIndices]
-        support_beta = beta[self.supportSetIndices]
-        s = self.sign_numpy(q*support_beta)
-        s_s_theta = self.sign_numpy(s*support_theta)
-        k_ = 1-(1-s_s_theta)/2
-        Ls = (k_*s*self.C - support_theta)/support_beta
-        Ls_min_index = np.argmin(np.abs(s))
-        Ls_min_support_vector_index = self.supportSetIndices[Ls_min_index]
+        if self.supportSetIndices.size >0:
+            support_theta = self.theta[self.supportSetIndices]
+            support_beta = beta[self.supportSetIndices]
+            s = self.sign_numpy(q*support_beta)
+            s_s_theta = self.sign_numpy(s*support_theta)
+            k_ = 1-(1-s_s_theta)/2
+            Ls = (k_*s*self.C - support_theta)/support_beta
+            Ls_min_index = np.argmin(np.abs(s))
+            Ls_min_support_vector_index = self.supportSetIndices[Ls_min_index]
+        else:
+            Ls = np.array([q * np.inf])
+            return Ls,Ls[0],0
+
         return Ls, np.abs(Ls[Ls_min_index]), Ls_min_support_vector_index
 
     def computeLe(self,q,beta):
