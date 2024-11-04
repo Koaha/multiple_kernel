@@ -53,7 +53,7 @@ Here’s how to use the package for training and predicting with different SVM s
    ```python
    from svm_wrapper import SVMWrapper
 
-   # Load your data
+   # Load toy data
    X_train, Y_train = ...  # Training data and labels
    X_test = ...            # Test data
 

@@ -1,11 +1,12 @@
+import numpy as np
 from src.kernels.kernels import *
 from src.operators.operators import *
-import numpy as np
+
 
 class KernelTree:
     """
-    KernelTree dynamically constructs combinations of base kernels with operators to 
-    create complex, customized kernels. Supports configurable depth to control the 
+    KernelTree dynamically constructs combinations of base kernels with operators to
+    create complex, customized kernels. Supports configurable depth to control the
     complexity of kernel compositions.
 
     Attributes
@@ -23,9 +24,13 @@ class KernelTree:
     def __init__(self, depth=2):
         self.depth = depth
         self.operations = [
-            OperatorAffine(), OperatorMultiplication(),
-            OperatorPolynomial(), OperatorExponential(),
-            OperatorCosine(), OperatorMin(), OperatorMax()
+            OperatorAffine(),
+            OperatorMultiplication(),
+            OperatorPolynomial(),
+            OperatorExponential(),
+            OperatorCosine(),
+            OperatorMin(),
+            OperatorMax(),
         ]
         self.base_kernels = [Linear(), Polynomial(), RBF(), Laplacian(), Sigmoid()]
         self.constructed_kernels = {1: self.base_kernels}
@@ -48,19 +53,21 @@ class KernelTree:
         children = []
         for kernel in self.base_kernels:
             for operation in self.operations:
-                # Apply single-input or dual-input operation based on the operator type
+                # Vectorized single-input or dual-input operations
                 if isinstance(operation, (OperatorExponential, OperatorPolynomial)):
                     # Single input operator
-                    child_kernel = lambda x, y, op=operation: op(parent_kernel(x, y))
+                    child_kernel = lambda X, Y, op=operation: op(parent_kernel(X, Y))
                 else:
                     # Dual input operator
-                    child_kernel = lambda x, y, op=operation: op(parent_kernel(x, y), kernel(x, y))
+                    child_kernel = lambda X, Y, op=operation: op(
+                        parent_kernel(X, Y), kernel(X, Y)
+                    )
                 children.append(child_kernel)
         return children
 
     def construct_tree(self, current_depth=1):
         """
-        Recursively constructs kernels up to the specified depth, with caching 
+        Recursively constructs kernels up to the specified depth, with caching
         to avoid redundant calculations. Stops if maximum depth is reached.
 
         Parameters
@@ -88,14 +95,15 @@ class KernelTree:
         list
             List of all kernels constructed up to the specified depth.
         """
-        kernels = []
-        for level, kernel_list in self.constructed_kernels.items():
-            kernels.extend(kernel_list)
-        return kernels
+        return [
+            kernel
+            for kernel_list in self.constructed_kernels.values()
+            for kernel in kernel_list
+        ]
 
     def apply_kernel_chain(self, X, Y, weights=None):
         """
-        Applies a chain of constructed kernels on data, optionally with weights, to 
+        Applies a chain of constructed kernels on data, optionally with weights, to
         combine multiple kernels into a single output matrix.
 
         Parameters
@@ -116,7 +124,7 @@ class KernelTree:
         weights = weights or [1 / len(kernels)] * len(kernels)
         combined_kernel = np.zeros((X.shape[0], Y.shape[0]))
 
-        # Apply each kernel with its weight, summing to form the final combined kernel matrix
+        # Vectorized application of kernels with weights
         for kernel, weight in zip(kernels, weights):
             combined_kernel += weight * kernel(X, Y)
         return combined_kernel

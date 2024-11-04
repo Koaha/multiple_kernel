@@ -2,16 +2,24 @@ import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from tqdm import tqdm
 from src.kernels.kernels import RBF
-from svm_helpers import (
-    compute_kernel_output, compute_margin, compute_gradient,
-    prune_support_vectors, adjust_sets, get_min_variation, determine_flag
+from src.utilities.optimization_helper import (
+    compute_kernel_output,
+    compute_margin,
+    compute_gradient,
+    prune_support_vectors,
+    adjust_sets,
+    get_min_variation,
 )
+from src.metrics.metrics_tracker import (
+    MetricsTracker,
+)  # Import MetricsTracker for real-time metrics
+
 
 class NySVM(BaseEstimator, ClassifierMixin):
     """
-    NySVM is an online Support Vector Machine using the Nyström method for 
-    efficient training with large datasets. This implementation allows 
-    for real-time learning, pruning, and adaptability with a variety of kernels.
+    NySVM is an online Support Vector Machine using the Nyström method for
+    efficient training with large datasets. Integrates real-time metric tracking
+    to monitor performance during training.
 
     Parameters
     ----------
@@ -31,6 +39,8 @@ class NySVM(BaseEstimator, ClassifierMixin):
         If True, enables pruning of support vectors.
     verbose : int, default=0
         Verbosity level. Higher values result in more console output.
+    enable_metrics : bool, optional, default=True
+        Enables real-time metrics tracking during training if set to True.
 
     Attributes
     ----------
@@ -46,9 +56,32 @@ class NySVM(BaseEstimator, ClassifierMixin):
         Indices of remainder vectors.
     R : np.matrix
         Covariance matrix of support vectors.
+    metrics_tracker : MetricsTracker
+        Instance for tracking and visualizing model metrics during training.
+
+    Examples
+    --------
+    # Basic usage with real-time metrics enabled
+    >>> X_train, Y_train = np.array([[1, 2], [2, 3], [3, 4]]), np.array([1, -1, 1])
+    >>> X_test, Y_test = np.array([[2, 3], [3, 5]]), np.array([1, -1])
+    >>> nysvm = NySVM(numFeatures=2, C=1.0, enable_metrics=True)
+    >>> nysvm.fit(X_train, Y_train)
+    >>> accuracy = nysvm.score(X_test, Y_test)
+    >>> print(f"Test accuracy: {accuracy}")
     """
 
-    def __init__(self, numFeatures, C=1, eps=1e-3, kernel=None, kernelParam=None, bias=0, prune=False, verbose=0):
+    def __init__(
+        self,
+        numFeatures,
+        C=1,
+        eps=1e-3,
+        kernel=None,
+        kernelParam=None,
+        bias=0,
+        prune=False,
+        verbose=0,
+        enable_metrics=True,
+    ):
         self.numFeatures = numFeatures
         self.C = C
         self.eps = eps
@@ -60,12 +93,20 @@ class NySVM(BaseEstimator, ClassifierMixin):
         self.numSamplesTrained = 0
         self.X, self.Y = [], []
         self.weights = np.array([])
-        self.supportSetIndices, self.errorSetIndices, self.remainderSetIndices = [], [], []
+        self.supportSetIndices, self.errorSetIndices, self.remainderSetIndices = (
+            [],
+            [],
+            [],
+        )
         self.R = np.matrix([])  # For support vector covariance matrix
+        self.enable_metrics = enable_metrics
+
+        # Initialize the metrics tracker if enabled
+        self.metrics_tracker = MetricsTracker() if self.enable_metrics else None
 
     def learn(self, newSampleX, newSampleY):
         """
-        Adds a new sample to the model and updates the weight and bias terms 
+        Adds a new sample to the model and updates the weight and bias terms
         using the NySVM online learning method.
 
         Parameters
@@ -91,7 +132,15 @@ class NySVM(BaseEstimator, ClassifierMixin):
             beta, gamma = self.computeBetaGamma(i)
             deltaC, flag, minIndex = get_min_variation(H, beta, gamma, i)
             self.update_weights_and_bias(i, deltaC, beta, gamma, H)
-            H, addNewSample = adjust_sets(H, self.weights, self.supportSetIndices, self.errorSetIndices, self.remainderSetIndices, flag, minIndex)
+            H, addNewSample = adjust_sets(
+                H,
+                self.weights,
+                self.supportSetIndices,
+                self.errorSetIndices,
+                self.remainderSetIndices,
+                flag,
+                minIndex,
+            )
 
     def update_weights_and_bias(self, i, deltaC, beta, gamma, H):
         """
@@ -113,8 +162,7 @@ class NySVM(BaseEstimator, ClassifierMixin):
         self.weights[i] += deltaC
         delta = beta * deltaC
         self.bias += delta.item(0)
-        weight_delta = np.array(delta[1:])
-        weight_delta.shape = (len(weight_delta),)
+        weight_delta = np.array(delta[1:]).reshape(-1)
         self.weights[self.supportSetIndices] += weight_delta
         H += gamma * deltaC
 
@@ -137,6 +185,24 @@ class NySVM(BaseEstimator, ClassifierMixin):
             if self.prune:
                 self.prune_vector()
 
+            if self.enable_metrics:
+                accuracy = self.score(X, Y)
+                margin_violation = np.mean(
+                    np.abs(
+                        compute_margin(
+                            self.weights, np.array(self.X), np.array(self.Y), self.bias
+                        )
+                    )
+                    > self.eps
+                )
+                self.metrics_tracker.update("accuracy", accuracy)
+                self.metrics_tracker.update("margin_violation", margin_violation)
+
+        if self.enable_metrics:
+            # Finalize and visualize metrics after training completes
+            self.metrics_tracker.finalize()
+            self.metrics_tracker.visualize_metrics()
+
     def prune_vector(self, threshold=1e-4):
         """
         Prunes less significant support vectors based on weight magnitude.
@@ -144,10 +210,12 @@ class NySVM(BaseEstimator, ClassifierMixin):
         Parameters
         ----------
         threshold : float, default=1e-4
-            Threshold for pruning. Support vectors with weights below this 
+            Threshold for pruning. Support vectors with weights below this
             value will be pruned.
         """
-        self.supportSetIndices = prune_support_vectors(self.weights, self.supportSetIndices, threshold)
+        self.supportSetIndices = prune_support_vectors(
+            self.weights, self.supportSetIndices, threshold
+        )
 
     def predict(self, X):
         """
@@ -164,7 +232,31 @@ class NySVM(BaseEstimator, ClassifierMixin):
             Predicted class labels, shape (n_samples,).
         """
         K = compute_kernel_output(self.kernel, np.array(self.X), X, self.kernelParam)
-        return np.where(K.T.dot(self.weights.reshape(-1, 1)) + self.bias > 0, 1, 0).astype(int)
+        predictions = K.T.dot(self.weights.reshape(-1, 1)) + self.bias
+        return np.where(predictions > 0, 1, -1).astype(int)
+
+    def score(self, X, Y):
+        """
+        Calculate the accuracy of the classifier on the test data.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Test data, shape (n_samples, n_features).
+        Y : np.ndarray
+            True labels, shape (n_samples,).
+
+        Returns
+        -------
+        float
+            Accuracy score as the fraction of correct predictions.
+        """
+        predictions = self.predict(X)
+        accuracy = np.mean(predictions == Y)
+        if self.enable_metrics:
+            # Track accuracy over time if real-time metrics are enabled
+            self.metrics_tracker.update("accuracy", accuracy)
+        return accuracy
 
     def computeBetaGamma(self, i):
         """
@@ -182,9 +274,29 @@ class NySVM(BaseEstimator, ClassifierMixin):
         gamma : np.ndarray
             Computed gamma values.
         """
-        Qsi = compute_kernel_output(self.kernel, np.array(self.X)[self.supportSetIndices], np.array(self.X)[i], self.kernelParam)
-        beta = -self.R @ np.append(np.matrix([1]), Qsi, axis=0) if len(self.supportSetIndices) > 0 else np.array([])
-        Qxi = compute_kernel_output(self.kernel, np.array(self.X), np.array(self.X)[i], self.kernelParam)
-        Qxs = compute_kernel_output(self.kernel, np.array(self.X), np.array(self.X)[self.supportSetIndices], self.kernelParam)
-        gamma = Qxi + np.append(np.ones([self.numSamplesTrained, 1]), Qxs, 1) @ beta if len(self.supportSetIndices) > 0 else np.array(np.ones_like(Qxi))
+        Qsi = compute_kernel_output(
+            self.kernel,
+            np.array(self.X)[self.supportSetIndices],
+            np.array(self.X)[i],
+            self.kernelParam,
+        )
+        beta = (
+            -self.R @ np.append(np.matrix([1]), Qsi, axis=0)
+            if len(self.supportSetIndices) > 0
+            else np.array([])
+        )
+        Qxi = compute_kernel_output(
+            self.kernel, np.array(self.X), np.array(self.X)[i], self.kernelParam
+        )
+        Qxs = compute_kernel_output(
+            self.kernel,
+            np.array(self.X),
+            np.array(self.X)[self.supportSetIndices],
+            self.kernelParam,
+        )
+        gamma = (
+            Qxi + np.append(np.ones([self.numSamplesTrained, 1]), Qxs, 1) @ beta
+            if len(self.supportSetIndices) > 0
+            else np.array(np.ones_like(Qxi))
+        )
         return np.nan_to_num(beta), np.nan_to_num(gamma)

@@ -1,18 +1,19 @@
 import numpy as np
 
+
 class Gram:
     """
-    Gram computes the kernel matrix between two sets of samples, X1 and X2, 
-    using a specified kernel function. The kernel can be any callable function 
+    Gram computes the kernel matrix between two sets of samples, X1 and X2,
+    using a specified kernel function. The kernel can be any callable function
     that takes two samples and returns a scalar value.
 
     Parameters
     ----------
     kernel : callable
         Kernel function to compute the similarity between two samples.
-    *args, **kwargs : 
+    *args, **kwargs :
         Additional arguments passed to the kernel function.
-    
+
     Methods
     -------
     __call__(X1, X2, kernel, *args, **kwargs)
@@ -30,9 +31,9 @@ class Gram:
         X2 : np.ndarray
             Second set of samples, shape (n_samples_2, n_features).
         kernel : callable
-            Kernel function to use. The function should accept two samples and 
+            Kernel function to use. The function should accept two samples and
             return a scalar similarity measure.
-        *args, **kwargs : 
+        *args, **kwargs :
             Additional arguments passed to the kernel function.
 
         Returns

@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class SMO:
     """
     Sequential Minimal Optimization (SMO) solver for Support Vector Machine (SVM).
@@ -42,7 +43,9 @@ class SMO:
         self.kernel = kernel if kernel else self.linear_kernel
         self.alpha = np.zeros(len(Y))
         self.b = 0
-        self.errors = np.zeros(len(Y))  # Error cache to store error terms for each sample
+        self.errors = np.zeros(
+            len(Y)
+        )  # Error cache to store error terms for each sample
 
     def linear_kernel(self, x1, x2):
         """
@@ -76,7 +79,7 @@ class SMO:
     def fit(self):
         """
         Train the SVM model using the SMO algorithm.
-        
+
         Notes
         -----
         The method iteratively updates the dual variables (alphas) using the SMO algorithm.
@@ -84,25 +87,18 @@ class SMO:
         maximum number of iterations is reached.
         """
         kernel_matrix = self.compute_kernel_matrix()
-        num_changed = 0
-        examine_all = True
-        iter_count = 0
+        examine_all, num_changed, iter_count = True, 0, 0
 
         while (num_changed > 0 or examine_all) and iter_count < self.max_iter:
             num_changed = 0
-            if examine_all:
-                # Iterate over all samples
-                for i in range(len(self.Y)):
-                    num_changed += self._examine_example(i, kernel_matrix)
-            else:
-                # Iterate only over samples with alpha between 0 and C
-                for i in np.where((self.alpha != 0) & (self.alpha != self.C))[0]:
-                    num_changed += self._examine_example(i, kernel_matrix)
+            indices = (
+                range(len(self.Y))
+                if examine_all
+                else np.where((self.alpha != 0) & (self.alpha != self.C))[0]
+            )
+            num_changed = sum(self._examine_example(i, kernel_matrix) for i in indices)
             iter_count += 1
-            if examine_all:
-                examine_all = False
-            elif num_changed == 0:
-                examine_all = True
+            examine_all = not examine_all if num_changed == 0 else examine_all
 
     def _examine_example(self, i, kernel_matrix):
         """
@@ -122,14 +118,12 @@ class SMO:
         """
         E_i = self._error(i, kernel_matrix)
         r_i = E_i * self.Y[i]
-        
-        # Check KKT conditions
-        if (r_i < -self.tol and self.alpha[i] < self.C) or (r_i > self.tol and self.alpha[i] > 0):
+
+        if (r_i < -self.tol and self.alpha[i] < self.C) or (
+            r_i > self.tol and self.alpha[i] > 0
+        ):
             j = self._select_second_alpha(i, E_i)
-            if j == -1:
-                return 0
-            if self._update_alphas(i, j, kernel_matrix):
-                return 1
+            return self._update_alphas(i, j, kernel_matrix)
         return 0
 
     def _update_alphas(self, i, j, kernel_matrix):
@@ -160,7 +154,6 @@ class SMO:
         if L == H:
             return False
 
-        # Compute eta
         eta = 2.0 * kernel_matrix[i, j] - kernel_matrix[i, i] - kernel_matrix[j, j]
         if eta >= 0:
             return False
@@ -202,9 +195,13 @@ class SMO:
             Lower and upper bounds (L, H).
         """
         if self.Y[i] != self.Y[j]:
-            return max(0, self.alpha[j] - self.alpha[i]), min(self.C, self.C + self.alpha[j] - self.alpha[i])
+            return max(0, self.alpha[j] - self.alpha[i]), min(
+                self.C, self.C + self.alpha[j] - self.alpha[i]
+            )
         else:
-            return max(0, self.alpha[i] + self.alpha[j] - self.C), min(self.C, self.alpha[i] + self.alpha[j])
+            return max(0, self.alpha[i] + self.alpha[j] - self.C), min(
+                self.C, self.alpha[i] + self.alpha[j]
+            )
 
     def _error(self, i, kernel_matrix):
         """
@@ -222,8 +219,7 @@ class SMO:
         float
             Error term for the ith example.
         """
-        f_x_i = np.dot((self.alpha * self.Y), kernel_matrix[:, i]) + self.b
-        return f_x_i - self.Y[i]
+        return np.dot((self.alpha * self.Y), kernel_matrix[:, i]) + self.b - self.Y[i]
 
     def _update_bias(self, E_i, E_j, i, j, alpha_i_old, alpha_j_old, kernel_matrix):
         """
@@ -246,10 +242,18 @@ class SMO:
         kernel_matrix : np.ndarray
             Precomputed kernel matrix for training data.
         """
-        b1 = self.b - E_i - self.Y[i] * (self.alpha[i] - alpha_i_old) * kernel_matrix[i, i] - \
-             self.Y[j] * (self.alpha[j] - alpha_j_old) * kernel_matrix[i, j]
-        b2 = self.b - E_j - self.Y[i] * (self.alpha[i] - alpha_i_old) * kernel_matrix[i, j] - \
-             self.Y[j] * (self.alpha[j] - alpha_j_old) * kernel_matrix[j, j]
+        b1 = (
+            self.b
+            - E_i
+            - self.Y[i] * (self.alpha[i] - alpha_i_old) * kernel_matrix[i, i]
+            - self.Y[j] * (self.alpha[j] - alpha_j_old) * kernel_matrix[i, j]
+        )
+        b2 = (
+            self.b
+            - E_j
+            - self.Y[i] * (self.alpha[i] - alpha_i_old) * kernel_matrix[i, j]
+            - self.Y[j] * (self.alpha[j] - alpha_j_old) * kernel_matrix[j, j]
+        )
 
         if 0 < self.alpha[i] < self.C:
             self.b = b1
@@ -276,13 +280,14 @@ class SMO:
         """
         non_bound_indices = np.where((self.alpha > 0) & (self.alpha < self.C))[0]
         if len(non_bound_indices) > 1:
-            max_error_idx = max(non_bound_indices, key=lambda j: abs(E_i - self.errors[j]))
-            return max_error_idx
+            j = non_bound_indices[
+                np.argmax(np.abs(E_i - self.errors[non_bound_indices]))
+            ]
         else:
             j = i
             while j == i:
                 j = np.random.randint(len(self.Y))
-            return j
+        return j
 
     def predict(self, X):
         """

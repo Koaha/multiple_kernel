@@ -1,9 +1,10 @@
 import numpy as np
 
+
 class Pegasos:
     """
     Pegasos Solver for SVM using stochastic sub-gradient descent.
-    
+
     Supports both linear and kernelized SVM, allowing efficient optimization
     with large-scale data through stochastic updates.
 
@@ -19,7 +20,7 @@ class Pegasos:
         Maximum number of iterations. Default is 1000.
     kernel : callable, optional
         Kernel function for non-linear SVM. If None, a linear SVM is used.
-    
+
     Attributes
     ----------
     w : np.ndarray
@@ -78,25 +79,22 @@ class Pegasos:
     def fit(self):
         """
         Train the SVM model using the Pegasos algorithm.
-        
+
         For linear SVM, updates the weight vector w. For kernelized SVM,
         updates dual coefficients alpha using the kernel trick.
         """
         for t in range(1, self.max_iter + 1):
-            # Select a random sample
             i = np.random.randint(len(self.Y))
             eta_t = 1 / (self.lambda_param * t)
 
             if self.kernel:
-                # Kernelized SVM update
                 self._update_alpha(i, eta_t)
             else:
-                # Linear SVM update
                 self._update_w(i, eta_t)
 
     def _update_w(self, i, eta_t):
         """
-        Update the weight vector for linear SVM.
+        Update the weight vector for linear SVM using vectorized operations.
 
         Parameters
         ----------
@@ -107,14 +105,13 @@ class Pegasos:
         """
         x_i, y_i = self.X[i], self.Y[i]
         margin = y_i * np.dot(self.w, x_i)
+        self.w *= 1 - eta_t * self.lambda_param
         if margin < 1:
-            self.w = (1 - eta_t * self.lambda_param) * self.w + eta_t * y_i * x_i
-        else:
-            self.w = (1 - eta_t * self.lambda_param) * self.w
+            self.w += eta_t * y_i * x_i
 
     def _update_alpha(self, i, eta_t):
         """
-        Update the alpha coefficients for kernelized SVM.
+        Update the alpha coefficients for kernelized SVM using vectorized operations.
 
         Parameters
         ----------
@@ -126,11 +123,11 @@ class Pegasos:
         x_i, y_i = self.X[i], self.Y[i]
         margin = y_i * self._predict_kernel(x_i)
         if margin < 1:
-            self.alpha[i] += 1  # Increment alpha only if margin constraint is violated
+            self.alpha[i] += 1
 
     def _predict_kernel(self, x):
         """
-        Calculate the decision function for kernelized SVM.
+        Calculate the decision function for kernelized SVM using vectorized operations.
 
         Parameters
         ----------
@@ -160,7 +157,7 @@ class Pegasos:
             Predicted class labels, shape (n_samples,).
         """
         if self.kernel:
-            return np.sign([self._predict_kernel(x) for x in X])
+            return np.sign(np.array([self._predict_kernel(x) for x in X]))
         else:
             return np.sign(np.dot(X, self.w))
 
