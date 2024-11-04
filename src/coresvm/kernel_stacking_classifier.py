@@ -6,6 +6,10 @@ from src.solvers.nysvm import NySVM
 from src.solvers.lasvm import LaSVM
 from validation.validation import Validation
 import numpy as np
+import onnx
+import onnxruntime as ort
+import joblib
+import h5py
 
 
 class KernelStackingClassifier(BaseEstimator, ClassifierMixin):
@@ -182,3 +186,103 @@ class KernelStackingClassifier(BaseEstimator, ClassifierMixin):
             metrics=metrics,
         )
         return validation.evaluate()
+
+    def save_model(self, file_path, format="hdf5"):
+        """
+        Save the stacking model to a file in the specified format.
+
+        Parameters
+        ----------
+        file_path : str
+            Path where the model should be saved.
+        format : str, optional
+            Format in which to save the model. Options are 'hdf5', 'joblib'.
+
+        Examples
+        --------
+        Save model in different formats:
+
+        ```python
+        # Save in HDF5 format
+        stacking_clf.save_model("stacking_model.h5", format="hdf5")
+
+        # Save in joblib format
+        stacking_clf.save_model("stacking_model.joblib", format="joblib")
+        ```
+        """
+        if format == "joblib":
+            joblib.dump(
+                {
+                    "base_estimators": self.base_estimators,
+                    "weights": self.weights,
+                    "meta_classifier": self.meta_classifier,
+                },
+                file_path,
+            )
+        elif format == "hdf5":
+            with h5py.File(file_path, "w") as f:
+                for i, estimator in enumerate(self.base_estimators):
+                    group = f.create_group(f"base_estimator_{i}")
+                    model_data = joblib.dumps(estimator)
+                    group.create_dataset(
+                        "estimator", data=np.frombuffer(model_data, dtype="uint8")
+                    )
+                f.create_dataset("weights", data=self.weights)
+                meta_data = joblib.dumps(self.meta_classifier)
+                f.create_dataset(
+                    "meta_classifier", data=np.frombuffer(meta_data, dtype="uint8")
+                )
+
+    @classmethod
+    def load_model(cls, file_path, format="hdf5"):
+        """
+        Load a stacking model from a file in the specified format.
+
+        Parameters
+        ----------
+        file_path : str
+            Path to the file from which the model is to be loaded.
+        format : str, optional
+            Format of the saved model. Options are 'hdf5', 'joblib'.
+
+        Returns
+        -------
+        KernelStackingClassifier
+            An instance of KernelStackingClassifier with loaded base estimators and meta-classifier.
+
+        Examples
+        --------
+        Load model in different formats:
+
+        ```python
+        # Load in HDF5 format
+        loaded_clf = KernelStackingClassifier.load_model("stacking_model.h5", format="hdf5")
+
+        # Load in joblib format
+        loaded_clf = KernelStackingClassifier.load_model("stacking_model.joblib", format="joblib")
+        ```
+        """
+        if format == "joblib":
+            data = joblib.load(file_path)
+            stacking_clf = cls(C=1.0)  # Initialize with default
+            stacking_clf.base_estimators = data["base_estimators"]
+            stacking_clf.weights = data["weights"]
+            stacking_clf.meta_classifier = data["meta_classifier"]
+            return stacking_clf
+        elif format == "hdf5":
+            with h5py.File(file_path, "r") as f:
+                base_estimators = []
+                for i in range(
+                    len(f.keys()) - 2
+                ):  # Exclude weights and meta_classifier
+                    model_data = f[f"base_estimator_{i}/estimator"][()]
+                    estimator = joblib.loads(model_data.tobytes())
+                    base_estimators.append(estimator)
+                weights = f["weights"][()]
+                meta_data = f["meta_classifier"][()]
+                meta_classifier = joblib.loads(meta_data.tobytes())
+            stacking_clf = cls(C=1.0)
+            stacking_clf.base_estimators = base_estimators
+            stacking_clf.weights = weights
+            stacking_clf.meta_classifier = meta_classifier
+            return stacking_clf

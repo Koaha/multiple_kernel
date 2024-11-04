@@ -1,3 +1,7 @@
+import onnx
+import onnxruntime as ort
+import joblib
+import h5py
 from sklearn.base import BaseEstimator, ClassifierMixin
 from src.kernels.kernels import RBF, Linear, Polynomial, Sigmoid
 from src.solvers.lasvm import LaSVM
@@ -175,3 +179,83 @@ class SVMEensemble(BaseEstimator, ClassifierMixin):
             metrics=metrics,
         )
         return validation.evaluate()
+
+    def save_model(self, file_path, format="hdf5"):
+        """
+        Save the ensemble model to a file in the specified format.
+
+        Parameters
+        ----------
+        file_path : str
+            Path where the model should be saved.
+        format : str, optional
+            Format in which to save the model. Options are 'hdf5', 'joblib'.
+
+        Examples
+        --------
+        Save model in different formats:
+
+        ```python
+        # Save in HDF5 format
+        ensemble.save_model("ensemble_model.h5", format="hdf5")
+
+        # Save in joblib format
+        ensemble.save_model("ensemble_model.joblib", format="joblib")
+        ```
+        """
+        if format == "joblib":
+            joblib.dump({"models": self.models, "weights": self.weights}, file_path)
+        elif format == "hdf5":
+            with h5py.File(file_path, "w") as f:
+                # Save each model in the ensemble
+                for i, model in enumerate(self.models):
+                    group = f.create_group(f"model_{i}")
+                    model_data = joblib.dumps(model)
+                    group.create_dataset(
+                        "model", data=np.frombuffer(model_data, dtype="uint8")
+                    )
+                f.create_dataset("weights", data=self.weights)
+
+    @classmethod
+    def load_model(cls, file_path, format="hdf5"):
+        """
+        Load an ensemble model from a file in the specified format.
+
+        Parameters
+        ----------
+        file_path : str
+            Path to the file from which the model is to be loaded.
+        format : str, optional
+            Format of the saved model. Options are 'hdf5', 'joblib'.
+
+        Returns
+        -------
+        SVMEensemble
+            An instance of SVMEensemble with loaded models and weights.
+
+        Examples
+        --------
+        Load model in different formats:
+
+        ```python
+        # Load in HDF5 format
+        loaded_ensemble = SVMEensemble.load_model("ensemble_model.h5", format="hdf5")
+
+        # Load in joblib format
+        loaded_ensemble = SVMEensemble.load_model("ensemble_model.joblib", format="joblib")
+        ```
+        """
+        if format == "joblib":
+            data = joblib.load(file_path)
+            ensemble = cls(C=1.0)  # Initialize with default
+            ensemble.models = data["models"]
+            ensemble.weights = data["weights"]
+            return ensemble
+        elif format == "hdf5":
+            ensemble = cls(C=1.0)  # Initialize with default
+            with h5py.File(file_path, "r") as f:
+                ensemble.models = [
+                    joblib.loads(f[f"model_{i}/model"][()]) for i in range(len(f) - 1)
+                ]
+                ensemble.weights = f["weights"][()]
+            return ensemble
