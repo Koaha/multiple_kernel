@@ -13,6 +13,7 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 
+
 class SVMWrapper:
     """
     SVMWrapper provides a unified interface to train and predict with different
@@ -27,8 +28,12 @@ class SVMWrapper:
     """
 
     def __init__(
-        self, solver_type="coresvm", config = None,
-        use_nystrom=False, nystrom_params=None, **kwargs
+        self,
+        solver_type="coresvm",
+        config=None,
+        use_nystrom=False,
+        nystrom_params=None,
+        **kwargs,
     ):
         # Check if Nyström approximation is needed
         if use_nystrom:
@@ -71,11 +76,14 @@ class SVMWrapper:
             Instantiated model with provided parameters.
         """
         # Example assumes a generic SVM class with `set_params` method.
-        from src.solvers.coresvm import CoreSVM  # Update this with actual model class if needed.
+        from src.solvers.coresvm import (
+            CoreSVM,
+        )  # Update this with actual model class if needed.
+
         model = CoreSVM()  # Replace with specific model initialization if needed.
         model.set_params(**params)
         return model
-    
+
     def fit(self, X, Y):
         """
         Fits the SVM model to the provided data.
@@ -119,30 +127,38 @@ class SVMWrapper:
         ```
         """
         logging.info(f"Saving model in {format} format to {file_path}.")
-        
+
         if format == "onnx":
-            initial_type = [('float_input', FloatTensorType([None, self.model.X.shape[1]]))]
+            initial_type = [
+                ("float_input", FloatTensorType([None, self.model.X.shape[1]]))
+            ]
             onnx_model = convert_sklearn(self.model, initial_types=initial_type)
-            with open(file_path, 'wb') as f:
+            with open(file_path, "wb") as f:
                 f.write(onnx_model.SerializeToString())
             logging.info("Model saved in ONNX format.")
 
         elif format == "joblib":
             joblib.dump((self.model, self.config), file_path, compress=compress)
-            logging.info(f"Model saved in Joblib format{' with compression' if compress else ''}.")
+            logging.info(
+                f"Model saved in Joblib format{' with compression' if compress else ''}."
+            )
 
         elif format == "hdf5":
-            with h5py.File(file_path, 'w') as f:
+            with h5py.File(file_path, "w") as f:
                 # Save model parameters as datasets
                 for key, value in self.model.get_params().items():
                     f.attrs[key] = value
                 # Save metadata if available
                 for key, value in self.config.items():
                     f.attrs[f"config_{key}"] = value
-                logging.info(f"Model and metadata saved in HDF5 format{' with compression' if compress else ''}.")
+                logging.info(
+                    f"Model and metadata saved in HDF5 format{' with compression' if compress else ''}."
+                )
 
         else:
-            raise ValueError("Unsupported format. Choose from 'onnx', 'joblib', or 'hdf5'.")
+            raise ValueError(
+                "Unsupported format. Choose from 'onnx', 'joblib', or 'hdf5'."
+            )
 
     @classmethod
     def load_model(cls, file_path, format=None):
@@ -154,7 +170,7 @@ class SVMWrapper:
         file_path : str
             Path to the file from which the model is to be loaded.
         format : str, optional
-            Format of the saved model. Options are 'onnx', 'joblib', or 'hdf5'. 
+            Format of the saved model. Options are 'onnx', 'joblib', or 'hdf5'.
             If None, auto-detects based on file extension.
 
         Returns
@@ -178,14 +194,16 @@ class SVMWrapper:
         """
         logging.info(f"Loading model from {file_path}.")
         if format is None:
-            if file_path.endswith('.onnx'):
+            if file_path.endswith(".onnx"):
                 format = "onnx"
-            elif file_path.endswith('.joblib'):
+            elif file_path.endswith(".joblib"):
                 format = "joblib"
-            elif file_path.endswith('.h5') or file_path.endswith('.hdf5'):
+            elif file_path.endswith(".h5") or file_path.endswith(".hdf5"):
                 format = "hdf5"
             else:
-                raise ValueError("Cannot determine format from file extension. Please specify format explicitly.")
+                raise ValueError(
+                    "Cannot determine format from file extension. Please specify format explicitly."
+                )
 
         if format == "onnx":
             onnx_model = onnx.load(file_path)
@@ -199,15 +217,25 @@ class SVMWrapper:
             return cls(model, config)
 
         elif format == "hdf5":
-            with h5py.File(file_path, 'r') as f:
-                config = {key[7:]: f.attrs[key] for key in f.attrs if key.startswith("config_")}
-                model_params = {key: f.attrs[key] for key in f.attrs if not key.startswith("config_")}
+            with h5py.File(file_path, "r") as f:
+                config = {
+                    key[7:]: f.attrs[key]
+                    for key in f.attrs
+                    if key.startswith("config_")
+                }
+                model_params = {
+                    key: f.attrs[key]
+                    for key in f.attrs
+                    if not key.startswith("config_")
+                }
             model = cls._initialize_model_from_params(model_params)
             logging.info("HDF5 model loaded successfully.")
             return cls(model, config)
 
         else:
-            raise ValueError("Unsupported format. Choose from 'onnx', 'joblib', or 'hdf5'.")
+            raise ValueError(
+                "Unsupported format. Choose from 'onnx', 'joblib', or 'hdf5'."
+            )
 
     def predict(self, X):
         """
